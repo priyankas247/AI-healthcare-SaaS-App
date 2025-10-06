@@ -1,40 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+## 🏗️ System Architecture Overview
 
-## Getting Started
+### 🧠 Data → Retrieval / Inference → Serving
+- **Data**: Doctor/patient consultation notes stored temporarily (JSON → DB/S3).
+- **Retrieval / Inference**: FastAPI backend receives input → formats system & user prompts → streams OpenAI model responses (SSE).
+- **Serving**: Next.js frontend served via FastAPI static files → listens to real-time summary updates through `text/event-stream`.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## ⚙️ Key Metrics
+| Metric | Description | Target |
+|--------|--------------|---------|
+| **p95 Latency** | End-to-end response | 1200–1800 ms |
+| **Cost / Request** | OpenAI token + infra | ~$0.01–$0.05 |
+| **Quality / Eval** | Human clarity score / ROUGE-L | ≥ 4.5 / 5 |
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+## ☁️ Cloud Infrastructure & Tools
+- **Compute / Hosting:** AWS App Runner (Docker container hosting)  
+- **Registry:** Amazon ECR (image storage)  
+- **CI/CD:** GitHub Actions → build & push → auto-deploy to App Runner  
+- **Secrets:** AWS Secrets Manager / App Runner environment variables  
+- **Auth:** Clerk for authentication  
+- **AI Engine:** OpenAI API (chat completion + streaming)  
+- **Monitoring:** AWS CloudWatch (logs, metrics)
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+---
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+## 🚀 CI/CD & MLOps Flow
+1. **Dev push → GitHub Actions** builds Docker image (`--platform linux/amd64` for AWS).  
+2. Runs lint/tests → pushes to **ECR**.  
+3. **App Runner** auto-deploys latest tag.  
+4. Live logs via **CloudWatch**; health checks monitor container readiness.  
+5. Model prompt updates tested offline → pushed via same pipeline.
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🧩 Postmortem – What Broke & How It Was Fixed
 
-To learn more about Next.js, take a look at the following resources:
+**Symptom:**  
+After deploying to AWS App Runner, the *Generate Summary* feature failed with:  
+`SSE error: Expected content-type to be text/event-stream, Actual: application/json`  
+and `POST /api/consultation → 403 Forbidden` or `404 Not Found`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+**Root Causes:**
+1. Missing `OPENAI_API_KEY` and `CLERK_SECRET_KEY` in App Runner environment.  
+2. FastAPI endpoint returning JSON/HTML instead of `text/event-stream`.  
+3. Build mismatch between local and container (Apple Silicon vs AWS).  
+4. Clerk publishable key not embedded at build time in Next.js.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Fixes:**
+- Added required env vars (`CLERK_JWKS_URL`, `CLERK_SECRET_KEY`, `OPENAI_API_KEY`).  
+- Ensured `StreamingResponse(..., media_type="text/event-stream")` for summary route.  
+- Rebuilt Docker image with `--platform linux/amd64` before pushing to ECR.  
+- Configured health check route `/health` in App Runner.  
+- Verified CloudWatch logs to confirm streaming and SSE handshake.
 
-## Deploy on Vercel
+✅ **Result:** Summary generation now streams correctly; deployment is stable and reproducible through CI/CD.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+## 🧭 Quick Diagram
+<img width="528" height="483" alt="Tech-Stack-Visual-10-06-2025_09_24_AM" src="https://github.com/user-attachments/assets/21dab3f4-0ed2-4daa-96a4-4fce870ec2cf" />
+
+> 🧑‍💻 Built and deployed by **Priyanka Sharma** — AI-powered Healthcare Consultation SaaS App
+
+
+
